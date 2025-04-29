@@ -69,6 +69,35 @@ app.get("/manrating", async (req, res) => {
   }
 });
 
+app.get("/womanrating", async (req, res) => {
+  let connection;
+
+  try {
+    connection = await oracledb.getConnection(dbConfig);
+
+    const result = await connection.execute(
+      "SELECT * FROM MOVIERATING WHERE PREFER = 'woman'",
+      [],
+      {
+        outFormat: oracledb.OUT_FORMAT_OBJECT,
+      }
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("DB 연결 실패:", error);
+    res.status(500).json({ error: "DB 연결 실패" });
+  } finally {
+    if (connection) {
+      try {
+        await connection.close();
+      } catch (err) {
+        console.error("연결 종료 실패:", err);
+      }
+    }
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Oracle 서버가 http://localhost:${PORT} 에서 실행 중`);
 });
