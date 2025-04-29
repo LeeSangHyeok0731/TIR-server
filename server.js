@@ -40,7 +40,7 @@ app.get("/oracle-data", async (req, res) => {
   }
 });
 
-app.get("/manrating", async (req, res) => {
+app.get("/man", async (req, res) => {
   let connection;
 
   try {
@@ -69,7 +69,7 @@ app.get("/manrating", async (req, res) => {
   }
 });
 
-app.get("/womanrating", async (req, res) => {
+app.get("/woman", async (req, res) => {
   let connection;
 
   try {
