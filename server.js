@@ -171,11 +171,15 @@ app.post("/login", async (req, res) => {
       return res.status(400).json({ message: "비밀번호가 틀렸습니다." });
     }
 
-    const token = jwt.sign({ email: user.EMAIL }, process.env.JWT_SECRET, {
-      expiresIn: "1h",
-    });
+    const accessToken = jwt.sign(
+      { email: user.EMAIL },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: "24h",
+      }
+    );
 
-    res.json({ message: "로그인 성공", token });
+    res.json({ message: "로그인 성공", accessToken });
   } catch (err) {
     console.error("로그인 실패:", err);
     res.status(500).json({ message: "서버 에러" });
