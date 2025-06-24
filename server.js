@@ -104,6 +104,36 @@ app.get("/woman", async (req, res) => {
   }
 });
 
+// 랜덤 영화 리스트 10개 조회 API
+app.get("/introduce", async (req, res) => {
+  let connection;
+
+  try {
+    connection = await oracledb.getConnection(dbConfig);
+
+    const result = await connection.execute(
+      "SELECT * FROM (SELECT * FROM MOVIERATING ORDER BY DBMS_RANDOM.VALUE) WHERE ROWNUM <= 10",
+      [],
+      {
+        outFormat: oracledb.OUT_FORMAT_OBJECT,
+      }
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("DB 연결 실패:", error);
+    res.status(500).json({ error: "DB 연결 실패" });
+  } finally {
+    if (connection) {
+      try {
+        await connection.close();
+      } catch (err) {
+        console.error("연결 종료 실패:", err);
+      }
+    }
+  }
+});
+
 const bcrypt = require("bcrypt");
 
 app.post("/register", async (req, res) => {
@@ -179,7 +209,7 @@ app.post("/login", async (req, res) => {
       }
     );
 
-    res.json({ message: "로그인 성공", accessToken });
+    res.json({ message: "로그인 성공", accessToken: accessToken });
   } catch (err) {
     console.error("로그인 실패:", err);
     res.status(500).json({ message: "서버 에러" });
