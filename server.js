@@ -2,6 +2,7 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const oracledb = require("oracledb");
+const jwt = require("jsonwebtoken");
 
 const app = express();
 const PORT = 4000;
@@ -18,6 +19,24 @@ const dbConfig = {
   user: process.env.ORACLE_USER,
   password: process.env.ORACLE_PASSWORD,
   connectString: process.env.ORACLE_CONNECTION_STRING || "localhost:1521/xe",
+};
+
+// JWT 토큰 검증 미들웨어
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1]; // Bearer TOKEN
+
+  if (!token) {
+    return res.status(401).json({ message: "액세스 토큰이 필요합니다." });
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+    if (err) {
+      return res.status(403).json({ message: "유효하지 않은 토큰입니다." });
+    }
+    req.user = user;
+    next();
+  });
 };
 
 // 전체 데이터 조회 API
@@ -171,8 +190,6 @@ app.post("/register", async (req, res) => {
   }
 });
 
-const jwt = require("jsonwebtoken");
-
 app.post("/login", async (req, res) => {
   const { email, password } = req.body;
   console.log("로그인 시도 이메일:", email);
@@ -217,3 +234,161 @@ app.post("/login", async (req, res) => {
     if (connection) await connection.close();
   }
 });
+
+// 평점 추가/수정 API
+app.post("/rating", authenticateToken, async (req, res) => {
+  const { movieId, movieTitle, rating } = req.body;
+  const userEmail = req.user.email;
+  let connection;
+
+  // 평점 유효성 검사 (0~5점)
+  if (rating < 0 || rating > 5 || !Number.isInteger(rating)) {
+    return res
+      .status(400)
+      .json({ message: "평점은 0~5 사이의 정수여야 합니다." });
+  }
+
+  try {
+    connection = await oracledb.getConnection(dbConfig);
+
+    // 이미 평점을 남긴 영화인지 확인
+    const checkRating = await connection.execute(
+      "SELECT * FROM USER_RATINGS WHERE USER_EMAIL = :email AND MOVIE_ID = :movieId",
+      [userEmail, movieId],
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
+    if (checkRating.rows.length > 0) {
+      // 기존 평점 수정
+      await connection.execute(
+        "UPDATE USER_RATINGS SET RATING = :rating, UPDATED_AT = SYSDATE WHERE USER_EMAIL = :email AND MOVIE_ID = :movieId",
+        [rating, userEmail, movieId],
+        { autoCommit: true }
+      );
+      res.json({ message: "평점이 수정되었습니다." });
+    } else {
+      // 새로운 평점 추가
+      await connection.execute(
+        "INSERT INTO USER_RATINGS (ID, USER_EMAIL, MOVIE_ID, MOVIE_TITLE, RATING, CREATED_AT) VALUES (USER_RATINGS_SEQ.NEXTVAL, :email, :movieId, :movieTitle, :rating, SYSDATE)",
+        [userEmail, movieId, movieTitle, rating],
+        { autoCommit: true }
+      );
+      res.status(201).json({ message: "평점이 추가되었습니다." });
+    }
+  } catch (err) {
+    console.error("평점 추가/수정 실패:", err);
+    res.status(500).json({ message: "서버 에러" });
+  } finally {
+    if (connection) await connection.close();
+  }
+});
+
+// 사용자 평점 목록 조회 API
+app.get("/ratings", authenticateToken, async (req, res) => {
+  const userEmail = req.user.email;
+  let connection;
+
+  try {
+    connection = await oracledb.getConnection(dbConfig);
+
+    const result = await connection.execute(
+      "SELECT * FROM USER_RATINGS WHERE USER_EMAIL = :email ORDER BY CREATED_AT DESC",
+      [userEmail],
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error("평점 조회 실패:", err);
+    res.status(500).json({ message: "서버 에러" });
+  } finally {
+    if (connection) await connection.close();
+  }
+});
+
+// 특정 영화의 평점 조회 API
+app.get("/ratings/:movieId", async (req, res) => {
+  const { movieId } = req.params;
+  let connection;
+
+  try {
+    connection = await oracledb.getConnection(dbConfig);
+
+    const result = await connection.execute(
+      "SELECT AVG(RATING) as AVERAGE_RATING, COUNT(*) as TOTAL_RATINGS FROM USER_RATINGS WHERE MOVIE_ID = :movieId",
+      [movieId],
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
+    const stats = result.rows[0];
+    res.json({
+      movieId: movieId,
+      averageRating: stats.AVERAGE_RATING
+        ? parseFloat(stats.AVERAGE_RATING).toFixed(1)
+        : 0,
+      totalRatings: parseInt(stats.TOTAL_RATINGS),
+    });
+  } catch (err) {
+    console.error("영화 평점 통계 조회 실패:", err);
+    res.status(500).json({ message: "서버 에러" });
+  } finally {
+    if (connection) await connection.close();
+  }
+});
+
+// 평점 삭제 API
+app.delete("/ratings/:movieId", authenticateToken, async (req, res) => {
+  const { movieId } = req.params;
+  const userEmail = req.user.email;
+  let connection;
+
+  try {
+    connection = await oracledb.getConnection(dbConfig);
+
+    const result = await connection.execute(
+      "DELETE FROM USER_RATINGS WHERE USER_EMAIL = :email AND MOVIE_ID = :movieId",
+      [userEmail, movieId],
+      { autoCommit: true }
+    );
+
+    if (result.rowsAffected === 0) {
+      return res.status(404).json({ message: "평점을 찾을 수 없습니다." });
+    }
+
+    res.json({ message: "평점이 삭제되었습니다." });
+  } catch (err) {
+    console.error("평점 삭제 실패:", err);
+    res.status(500).json({ message: "서버 에러" });
+  } finally {
+    if (connection) await connection.close();
+  }
+});
+
+/*
+-- 시퀀스 생성
+CREATE SEQUENCE USER_RATINGS_SEQ
+    START WITH 1
+    INCREMENT BY 1
+    NOCACHE
+    NOCYCLE;
+
+-- 테이블 생성
+CREATE TABLE USER_RATINGS (
+    ID NUMBER PRIMARY KEY,
+    USER_EMAIL VARCHAR2(100) NOT NULL,
+    MOVIE_ID VARCHAR2(50) NOT NULL,
+    MOVIE_TITLE VARCHAR2(200) NOT NULL,
+    RATING NUMBER(1) NOT NULL,
+    CREATED_AT DATE DEFAULT SYSDATE,
+    UPDATED_AT DATE DEFAULT SYSDATE,
+    CONSTRAINT CHK_RATING CHECK (RATING >= 0 AND RATING <= 5),
+    CONSTRAINT UK_USER_MOVIE UNIQUE (USER_EMAIL, MOVIE_ID)
+);
+
+-- 인덱스 생성
+CREATE INDEX IDX_USER_RATINGS_USER ON USER_RATINGS(USER_EMAIL);
+CREATE INDEX IDX_USER_RATINGS_MOVIE ON USER_RATINGS(MOVIE_ID);
+
+commit;
+
+*/
