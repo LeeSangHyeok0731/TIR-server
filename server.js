@@ -23,17 +23,27 @@ const dbConfig = {
 
 // JWT 토큰 검증 미들웨어
 const authenticateToken = (req, res, next) => {
+  console.log("인증 미들웨어 실행");
+  console.log("요청 URL:", req.url);
+  console.log("요청 메서드:", req.method);
+
   const authHeader = req.headers["authorization"];
+  console.log("Authorization 헤더:", authHeader);
+
   const token = authHeader && authHeader.split(" ")[1]; // Bearer TOKEN
+  console.log("추출된 토큰:", token ? "토큰 존재" : "토큰 없음");
 
   if (!token) {
+    console.log("토큰이 없어서 401 에러 반환");
     return res.status(401).json({ message: "액세스 토큰이 필요합니다." });
   }
 
   jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
     if (err) {
+      console.log("토큰 검증 실패:", err.message);
       return res.status(403).json({ message: "유효하지 않은 토큰입니다." });
     }
+    console.log("토큰 검증 성공, 사용자:", user);
     req.user = user;
     next();
   });
@@ -284,11 +294,15 @@ app.post("/rating", authenticateToken, async (req, res) => {
 
 // 사용자 평점 목록 조회 API
 app.get("/ratings", authenticateToken, async (req, res) => {
+  console.log("GET /ratings 요청 받음");
+  console.log("사용자 이메일:", req.user.email);
+
   const userEmail = req.user.email;
   let connection;
 
   try {
     connection = await oracledb.getConnection(dbConfig);
+    console.log("DB 연결 성공");
 
     const result = await connection.execute(
       "SELECT * FROM USER_RATINGS WHERE USER_EMAIL = :email ORDER BY CREATED_AT DESC",
@@ -296,6 +310,7 @@ app.get("/ratings", authenticateToken, async (req, res) => {
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
 
+    console.log("조회된 평점 수:", result.rows.length);
     res.json(result.rows);
   } catch (err) {
     console.error("평점 조회 실패:", err);
