@@ -39,7 +39,6 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-// 전체 데이터 조회 API
 app.get("/oracle-data", async (req, res) => {
   let connection;
 
