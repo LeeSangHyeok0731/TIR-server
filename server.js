@@ -244,6 +244,62 @@ app.post("/login", async (req, res) => {
   }
 });
 
+// 사용자 평점 목록 조회 API
+app.get("/ratings", authenticateToken, async (req, res) => {
+  console.log("GET /ratings 요청 받음");
+  console.log("사용자 이메일:", req.user.email);
+
+  const userEmail = req.user.email;
+  let connection;
+
+  try {
+    connection = await oracledb.getConnection(dbConfig);
+    console.log("DB 연결 성공");
+
+    const result = await connection.execute(
+      "SELECT * FROM USER_RATINGS WHERE USER_EMAIL = :email ORDER BY CREATED_AT DESC",
+      [userEmail],
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
+    console.log("조회된 평점 수:", result.rows.length);
+    res.json(result.rows);
+  } catch (err) {
+    console.error("평점 조회 실패:", err);
+    res.status(500).json({ message: "서버 에러" });
+  } finally {
+    if (connection) await connection.close();
+  }
+});
+
+// 평점 삭제 API
+app.delete("/rating-delete/:movieId", authenticateToken, async (req, res) => {
+  const { movieId } = req.params;
+  const userEmail = req.user.email;
+  let connection;
+
+  try {
+    connection = await oracledb.getConnection(dbConfig);
+
+    const result = await connection.execute(
+      "DELETE FROM USER_RATINGS WHERE USER_EMAIL = :email AND MOVIE_ID = :movieId",
+      [userEmail, movieId],
+      { autoCommit: true }
+    );
+
+    if (result.rowsAffected === 0) {
+      return res.status(404).json({ message: "평점을 찾을 수 없습니다." });
+    }
+
+    res.json({ message: "평점이 삭제되었습니다." });
+  } catch (err) {
+    console.error("평점 삭제 실패:", err);
+    res.status(500).json({ message: "서버 에러" });
+  } finally {
+    if (connection) await connection.close();
+  }
+});
+
 // 평점 추가/수정 API
 app.post("/rating", authenticateToken, async (req, res) => {
   const { movieId, movieTitle, rating } = req.body;
@@ -286,62 +342,6 @@ app.post("/rating", authenticateToken, async (req, res) => {
     }
   } catch (err) {
     console.error("평점 추가/수정 실패:", err);
-    res.status(500).json({ message: "서버 에러" });
-  } finally {
-    if (connection) await connection.close();
-  }
-});
-
-// 사용자 평점 목록 조회 API
-app.get("/ratings", authenticateToken, async (req, res) => {
-  console.log("GET /ratings 요청 받음");
-  console.log("사용자 이메일:", req.user.email);
-
-  const userEmail = req.user.email;
-  let connection;
-
-  try {
-    connection = await oracledb.getConnection(dbConfig);
-    console.log("DB 연결 성공");
-
-    const result = await connection.execute(
-      "SELECT * FROM USER_RATINGS WHERE USER_EMAIL = :email ORDER BY CREATED_AT DESC",
-      [userEmail],
-      { outFormat: oracledb.OUT_FORMAT_OBJECT }
-    );
-
-    console.log("조회된 평점 수:", result.rows.length);
-    res.json(result.rows);
-  } catch (err) {
-    console.error("평점 조회 실패:", err);
-    res.status(500).json({ message: "서버 에러" });
-  } finally {
-    if (connection) await connection.close();
-  }
-});
-
-// 평점 삭제 API
-app.delete("/ratings/:movieId", authenticateToken, async (req, res) => {
-  const { movieId } = req.params;
-  const userEmail = req.user.email;
-  let connection;
-
-  try {
-    connection = await oracledb.getConnection(dbConfig);
-
-    const result = await connection.execute(
-      "DELETE FROM USER_RATINGS WHERE USER_EMAIL = :email AND MOVIE_ID = :movieId",
-      [userEmail, movieId],
-      { autoCommit: true }
-    );
-
-    if (result.rowsAffected === 0) {
-      return res.status(404).json({ message: "평점을 찾을 수 없습니다." });
-    }
-
-    res.json({ message: "평점이 삭제되었습니다." });
-  } catch (err) {
-    console.error("평점 삭제 실패:", err);
     res.status(500).json({ message: "서버 에러" });
   } finally {
     if (connection) await connection.close();
