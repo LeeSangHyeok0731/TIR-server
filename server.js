@@ -348,6 +348,61 @@ app.post("/rating", authenticateToken, async (req, res) => {
   }
 });
 
+// 장르와 성별로 영화 추천 API (입력한 장르를 많이 포함할수록 우선순위 높게)
+app.post("/genre-recommends", async (req, res) => {
+  const { genres, gender } = req.body;
+  let connection;
+
+  if (!genres || !gender) {
+    return res
+      .status(400)
+      .json({ message: "장르와 성별을 모두 입력해야 합니다." });
+  }
+
+  const genreList = Array.isArray(genres) ? genres : [genres];
+
+  // match_count 계산용 SQL 조각 생성
+  const matchCountSql = genreList
+    .map(
+      (g, idx) => `CASE WHEN INSTR(GENRE, :genre${idx}) > 0 THEN 1 ELSE 0 END`
+    )
+    .join(" + ");
+
+  // 바인딩 파라미터 준비
+  const bindParams = { gender };
+  genreList.forEach((g, idx) => {
+    bindParams[`genre${idx}`] = g;
+  });
+
+  try {
+    connection = await oracledb.getConnection(dbConfig);
+    const query = `
+      SELECT TITLE, RATING, MANRATING, FEMALERATING, MANPER, FEMALEPER, MANGR, WOMANGR, PREFER, GENRE, ${matchCountSql} AS match_count
+      FROM MOVIERATING
+      WHERE PREFER = :gender
+        AND (${genreList
+          .map((_, idx) => `INSTR(GENRE, :genre${idx}) > 0`)
+          .join(" OR ")})
+      ORDER BY match_count DESC
+    `;
+    const result = await connection.execute(query, bindParams, {
+      outFormat: oracledb.OUT_FORMAT_OBJECT,
+    });
+    res.json(result.rows);
+  } catch (error) {
+    console.error("영화 추천 쿼리 실패:", error);
+    res.status(500).json({ error: "영화 추천 쿼리 실패" });
+  } finally {
+    if (connection) {
+      try {
+        await connection.close();
+      } catch (err) {
+        console.error("연결 종료 실패:", err);
+      }
+    }
+  }
+});
+
 /*
 -- 시퀀스 생성
 CREATE SEQUENCE USER_RATINGS_SEQ
