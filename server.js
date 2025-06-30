@@ -320,36 +320,6 @@ app.get("/ratings", authenticateToken, async (req, res) => {
   }
 });
 
-// 특정 영화의 평점 조회 API
-app.get("/ratings/:movieId", async (req, res) => {
-  const { movieId } = req.params;
-  let connection;
-
-  try {
-    connection = await oracledb.getConnection(dbConfig);
-
-    const result = await connection.execute(
-      "SELECT AVG(RATING) as AVERAGE_RATING, COUNT(*) as TOTAL_RATINGS FROM USER_RATINGS WHERE MOVIE_ID = :movieId",
-      [movieId],
-      { outFormat: oracledb.OUT_FORMAT_OBJECT }
-    );
-
-    const stats = result.rows[0];
-    res.json({
-      movieId: movieId,
-      averageRating: stats.AVERAGE_RATING
-        ? parseFloat(stats.AVERAGE_RATING).toFixed(1)
-        : 0,
-      totalRatings: parseInt(stats.TOTAL_RATINGS),
-    });
-  } catch (err) {
-    console.error("영화 평점 통계 조회 실패:", err);
-    res.status(500).json({ message: "서버 에러" });
-  } finally {
-    if (connection) await connection.close();
-  }
-});
-
 // 평점 삭제 API
 app.delete("/ratings/:movieId", authenticateToken, async (req, res) => {
   const { movieId } = req.params;
